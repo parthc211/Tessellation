@@ -118,6 +118,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Camera.cpp" />
     <ClCompile Include="DXCore.cpp" />
     <ClCompile Include="Game.cpp" />
     <ClCompile Include="Main.cpp" />
@@ -127,6 +128,8 @@
     <ClInclude Include="Camera.h" />
     <ClInclude Include="DXCore.h" />
     <ClInclude Include="Game.h" />
+    <ClInclude Include="GameEntity.h" />
+    <ClInclude Include="Mesh.h" />
     <ClInclude Include="SimpleShader.h" />
     <ClInclude Include="Vertex.h" />
   </ItemGroup>

@@ -2,13 +2,12 @@
 
 #include <DirectXMath.h>
 
-// --------------------------------------------------------
-// A custom vertex definition
-//
-// You will eventually ADD TO this, and/or make more of these!
-// --------------------------------------------------------
+using namespace DirectX;
+
 struct Vertex
 {
-	DirectX::XMFLOAT3 Position;	    // The position of the vertex
-	DirectX::XMFLOAT4 Color;        // The color of the vertex
+	XMFLOAT3 Position;	    // The position of the vertex
+	XMFLOAT2 UV;
+	XMFLOAT3 Normal;
+	XMFLOAT3 Tangent;
 };
