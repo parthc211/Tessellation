@@ -15,7 +15,7 @@ using namespace DirectX;
 Game::Game(HINSTANCE hInstance)
 	: DXCore( 
 		hInstance,		   // The application's handle
-		"DirectX Game",	   // Text for the window's title bar
+		"Tessellation Demo",	   // Text for the window's title bar
 		1280,			   // Width of the window's client area
 		720,			   // Height of the window's client area
 		true)			   // Show extra stats (fps) in title bar?
