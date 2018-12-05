@@ -378,6 +378,9 @@ HRESULT DXCore::Run()
 		}
 	}
 
+	// Shut down ImGui to avoid memory leaks
+	ImGui_ImplDX11_Shutdown();
+
 	// We'll end up here once we get a WM_QUIT message,
 	// which usually comes from the user closing the window
 	return msg.wParam;
@@ -504,7 +507,7 @@ void DXCore::CreateConsoleWindow(int bufferLines, int bufferColumns, int windowL
 }
 
 
-
+extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 
 // --------------------------------------------------------
@@ -515,6 +518,9 @@ void DXCore::CreateConsoleWindow(int bufferLines, int bufferColumns, int windowL
 // --------------------------------------------------------
 LRESULT DXCore::ProcessMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
+	if (ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam))
+		return true;
+
 	// Check the incoming message and handle any we care about
 	switch (uMsg)
 	{
@@ -541,8 +547,12 @@ LRESULT DXCore::ProcessMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPara
 
 		// If DX is initialized, resize 
 		// our required buffers
-		if (device) 
+		if (device)
+		{
+			ImGui_ImplDX11_InvalidateDeviceObjects();
 			OnResize();
+			ImGui_ImplDX11_CreateDeviceObjects();
+		}
 
 		return 0;
 

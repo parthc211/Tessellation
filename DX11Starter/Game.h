@@ -3,6 +3,9 @@
 #include "DXCore.h"
 #include "SimpleShader.h"
 #include <DirectXMath.h>
+#include "Camera.h"
+#include "Mesh.h"
+#include "GameEntity.h"
 
 class Game 
 	: public DXCore
@@ -30,14 +33,43 @@ private:
 	void LoadShaders(); 
 	void CreateMatrices();
 	void CreateBasicGeometry();
+	void LoadTextures();
+	void LoadMaterials();
+	void LoadSkyBox();
 
-	// Buffers to hold actual geometry data
-	ID3D11Buffer* vertexBuffer;
-	ID3D11Buffer* indexBuffer;
+	Mesh* sphereMesh;
+	Mesh* skyMesh;
+	GameEntity* sphereEntity;
+	GameEntity* skyEntity;
+	Camera* camera;
+
+	float tessellationAmount;
+	int rsState;
+	float HScale;
+	float HBias;
+
+	// Texture stuff
+	ID3D11SamplerState* sampler;
+	ID3D11SamplerState* heightSampler;
+	ID3D11ShaderResourceView* sphereTextureSRV;
+	ID3D11ShaderResourceView* sphereNormalMapSRV;
+	ID3D11ShaderResourceView* sphereHeightMapSRV;
+	ID3D11ShaderResourceView* skyTextureSRV;
 
 	// Wrappers for DirectX shaders to provide simplified functionality
 	SimpleVertexShader* vertexShader;
 	SimplePixelShader* pixelShader;
+	SimpleVertexShader* skyVertexShader;
+	SimplePixelShader* skyPixelShader;
+	SimpleVertexShader* tessVertexShader;
+	SimpleVertexShader* tessPixelShader;
+	SimpleHullShader* hullShader;
+	SimpleDomainShader* domainShader;
+
+	ID3D11RasterizerState* rsStateSolid;
+	ID3D11RasterizerState* rsStateWire;
+	ID3D11RasterizerState* skyRasterizerState;
+	ID3D11DepthStencilState* skyDepthState;
 
 	// The matrices to go from model space to screen space
 	DirectX::XMFLOAT4X4 worldMatrix;

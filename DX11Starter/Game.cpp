@@ -1,5 +1,7 @@
 #include "Game.h"
 #include "Vertex.h"
+#include "WICTextureLoader.h"
+#include "DDSTextureLoader.h"
 
 // For the DirectX Math library
 using namespace DirectX;
@@ -21,8 +23,8 @@ Game::Game(HINSTANCE hInstance)
 		true)			   // Show extra stats (fps) in title bar?
 {
 	// Initialize fields
-	vertexBuffer = 0;
-	indexBuffer = 0;
+	//vertexBuffer = 0;
+	//indexBuffer = 0;
 	vertexShader = 0;
 	pixelShader = 0;
 
@@ -40,15 +42,32 @@ Game::Game(HINSTANCE hInstance)
 // --------------------------------------------------------
 Game::~Game()
 {
-	// Release any (and all!) DirectX objects
-	// we've made in the Game class
-	if (vertexBuffer) { vertexBuffer->Release(); }
-	if (indexBuffer) { indexBuffer->Release(); }
-
-	// Delete our simple shader objects, which
-	// will clean up their own internal DirectX stuff
 	delete vertexShader;
 	delete pixelShader;
+	delete skyVertexShader;
+	delete skyPixelShader;
+	delete tessVertexShader;
+	delete tessPixelShader;
+	delete hullShader;
+	delete domainShader;
+
+	delete sphereMesh;
+	delete skyMesh;
+	delete sphereEntity;
+	delete skyEntity;
+	delete camera;
+
+	sampler->Release();
+	heightSampler->Release();
+	sphereTextureSRV->Release();
+	sphereNormalMapSRV->Release();
+	sphereHeightMapSRV->Release();
+	skyTextureSRV->Release();
+
+	rsStateSolid->Release();
+	rsStateWire->Release();
+	skyRasterizerState->Release();
+	skyDepthState->Release();
 }
 
 // --------------------------------------------------------
@@ -57,17 +76,53 @@ Game::~Game()
 // --------------------------------------------------------
 void Game::Init()
 {
-	// Helper methods for loading shaders, creating some basic
-	// geometry to draw and some simple camera matrices.
-	//  - You'll be expanding and/or replacing these later
 	LoadShaders();
 	CreateMatrices();
 	CreateBasicGeometry();
+	LoadTextures();
+	LoadMaterials();
+	LoadSkyBox();
 
-	// Tell the input assembler stage of the pipeline what kind of
-	// geometric primitives (points, lines or triangles) we want to draw.  
-	// Essentially: "What kind of shape should the GPU draw with our data?"
+	D3D11_RASTERIZER_DESC rasterDescSolid;
+	rasterDescSolid.AntialiasedLineEnable = false;
+	rasterDescSolid.CullMode = D3D11_CULL_NONE;
+	rasterDescSolid.DepthBias = 0;
+	rasterDescSolid.DepthBiasClamp = 0.0f;
+	rasterDescSolid.DepthClipEnable = false;
+	rasterDescSolid.FillMode = D3D11_FILL_SOLID;
+	rasterDescSolid.FrontCounterClockwise = false;
+	rasterDescSolid.MultisampleEnable = false;
+	rasterDescSolid.ScissorEnable = false;
+	rasterDescSolid.SlopeScaledDepthBias = 0.0f;
+
+	device->CreateRasterizerState(&rasterDescSolid, &rsStateSolid);
+
+	D3D11_RASTERIZER_DESC rasterDescWireframe;
+	rasterDescWireframe.AntialiasedLineEnable = false;
+	rasterDescWireframe.CullMode = D3D11_CULL_NONE;
+	rasterDescWireframe.DepthBias = 0;
+	rasterDescWireframe.DepthBiasClamp = 0.0f;
+	rasterDescWireframe.DepthClipEnable = false;
+	rasterDescWireframe.FillMode = D3D11_FILL_WIREFRAME;
+	rasterDescWireframe.FrontCounterClockwise = false;
+	rasterDescWireframe.MultisampleEnable = false;
+	rasterDescWireframe.ScissorEnable = false;
+	rasterDescWireframe.SlopeScaledDepthBias = 0.0f;
+
+	device->CreateRasterizerState(&rasterDescWireframe, &rsStateWire);
+
 	context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	tessellationAmount = 10.0f;
+	rsState = 0;
+	HScale = 0.5f;
+	HBias = 1.0f;
+
+	// Setup ImGui binding
+	ImGui_ImplDX11_Init(hWnd, device, context);
+
+	// Setup style
+	ImGui::StyleColorsDark();
 }
 
 // --------------------------------------------------------
@@ -106,40 +161,8 @@ void Game::LoadShaders()
 // --------------------------------------------------------
 void Game::CreateMatrices()
 {
-	// Set up world matrix
-	// - In an actual game, each object will need one of these and they should
-	//   update when/if the object moves (every frame)
-	// - You'll notice a "transpose" happening below, which is redundant for
-	//   an identity matrix.  This is just to show that HLSL expects a different
-	//   matrix (column major vs row major) than the DirectX Math library
-	XMMATRIX W = XMMatrixIdentity();
-	XMStoreFloat4x4(&worldMatrix, XMMatrixTranspose(W)); // Transpose for HLSL!
-
-	// Create the View matrix
-	// - In an actual game, recreate this matrix every time the camera 
-	//    moves (potentially every frame)
-	// - We're using the LOOK TO function, which takes the position of the
-	//    camera and the direction vector along which to look (as well as "up")
-	// - Another option is the LOOK AT function, to look towards a specific
-	//    point in 3D space
-	XMVECTOR pos = XMVectorSet(0, 0, -5, 0);
-	XMVECTOR dir = XMVectorSet(0, 0, 1, 0);
-	XMVECTOR up  = XMVectorSet(0, 1, 0, 0);
-	XMMATRIX V   = XMMatrixLookToLH(
-		pos,     // The position of the "camera"
-		dir,     // Direction the camera is looking
-		up);     // "Up" direction in 3D space (prevents roll)
-	XMStoreFloat4x4(&viewMatrix, XMMatrixTranspose(V)); // Transpose for HLSL!
-
-	// Create the Projection matrix
-	// - This should match the window's aspect ratio, and also update anytime
-	//   the window resizes (which is already happening in OnResize() below)
-	XMMATRIX P = XMMatrixPerspectiveFovLH(
-		0.25f * 3.1415926535f,		// Field of View Angle
-		(float)width / height,		// Aspect ratio
-		0.1f,						// Near clip plane distance
-		100.0f);					// Far clip plane distance
-	XMStoreFloat4x4(&projectionMatrix, XMMatrixTranspose(P)); // Transpose for HLSL!
+	camera = new Camera(0, 0, -5);
+	camera->UpdateProjectionMatrix((float)width / height);
 }
 
 
@@ -148,71 +171,17 @@ void Game::CreateMatrices()
 // --------------------------------------------------------
 void Game::CreateBasicGeometry()
 {
-	// Create some temporary variables to represent colors
-	// - Not necessary, just makes things more readable
-	XMFLOAT4 red	= XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f);
-	XMFLOAT4 green	= XMFLOAT4(0.0f, 1.0f, 0.0f, 1.0f);
-	XMFLOAT4 blue	= XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f);
+	sphereMesh = new Mesh("Models/sphere.obj", device);
+	sphereEntity = new GameEntity(sphereMesh);
+	sphereEntity->SetPosition(0.0f, 0.0f, 0.0f);
+	sphereEntity->SetRotation(0.0f, 0.0f, 0.0f);
+	sphereEntity->SetScale(0.5f, 0.5f, 0.5f);
 
-	// Set up the vertices of the triangle we would like to draw
-	// - We're going to copy this array, exactly as it exists in memory
-	//    over to a DirectX-controlled data structure (the vertex buffer)
-	Vertex vertices[] = 
-	{
-		{ XMFLOAT3(+0.0f, +1.0f, +0.0f), red },
-		{ XMFLOAT3(+1.5f, -1.0f, +0.0f), blue },
-		{ XMFLOAT3(-1.5f, -1.0f, +0.0f), green },
-	};
-
-	// Set up the indices, which tell us which vertices to use and in which order
-	// - This is somewhat redundant for just 3 vertices (it's a simple example)
-	// - Indices are technically not required if the vertices are in the buffer 
-	//    in the correct order and each one will be used exactly once
-	// - But just to see how it's done...
-	int indices[] = { 0, 1, 2 };
-
-
-	// Create the VERTEX BUFFER description -----------------------------------
-	// - The description is created on the stack because we only need
-	//    it to create the buffer.  The description is then useless.
-	D3D11_BUFFER_DESC vbd;
-	vbd.Usage				= D3D11_USAGE_IMMUTABLE;
-	vbd.ByteWidth			= sizeof(Vertex) * 3;       // 3 = number of vertices in the buffer
-	vbd.BindFlags			= D3D11_BIND_VERTEX_BUFFER; // Tells DirectX this is a vertex buffer
-	vbd.CPUAccessFlags		= 0;
-	vbd.MiscFlags			= 0;
-	vbd.StructureByteStride	= 0;
-
-	// Create the proper struct to hold the initial vertex data
-	// - This is how we put the initial data into the buffer
-	D3D11_SUBRESOURCE_DATA initialVertexData;
-	initialVertexData.pSysMem = vertices;
-
-	// Actually create the buffer with the initial data
-	// - Once we do this, we'll NEVER CHANGE THE BUFFER AGAIN
-	device->CreateBuffer(&vbd, &initialVertexData, &vertexBuffer);
-
-
-
-	// Create the INDEX BUFFER description ------------------------------------
-	// - The description is created on the stack because we only need
-	//    it to create the buffer.  The description is then useless.
-	D3D11_BUFFER_DESC ibd;
-	ibd.Usage               = D3D11_USAGE_IMMUTABLE;
-	ibd.ByteWidth           = sizeof(int) * 3;         // 3 = number of indices in the buffer
-	ibd.BindFlags           = D3D11_BIND_INDEX_BUFFER; // Tells DirectX this is an index buffer
-	ibd.CPUAccessFlags      = 0;
-	ibd.MiscFlags           = 0;
-	ibd.StructureByteStride = 0;
-
-	// Create the proper struct to hold the initial index data
-	// - This is how we put the initial data into the buffer
-	D3D11_SUBRESOURCE_DATA initialIndexData;
-	initialIndexData.pSysMem = indices;
-
-	// Actually create the buffer with the initial data
-	// - Once we do this, we'll NEVER CHANGE THE BUFFER AGAIN
-	device->CreateBuffer(&ibd, &initialIndexData, &indexBuffer);
+	skyMesh = new Mesh("Models/cube.obj", device);
+	skyEntity = new GameEntity(skyMesh);
+	skyEntity->SetPosition(0.0f, 0.0f, 0.0f);
+	skyEntity->SetRotation(0.0f, 0.0f, 0.0f);
+	skyEntity->SetScale(1.0f, 1.0f, 1.0);
 }
 
 
