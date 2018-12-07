@@ -62,7 +62,7 @@ private:
 	SimpleVertexShader* skyVertexShader;
 	SimplePixelShader* skyPixelShader;
 	SimpleVertexShader* tessVertexShader;
-	SimpleVertexShader* tessPixelShader;
+	SimplePixelShader* tessPixelShader;
 	SimpleHullShader* hullShader;
 	SimpleDomainShader* domainShader;
 

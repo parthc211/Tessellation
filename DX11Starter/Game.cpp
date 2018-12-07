@@ -141,16 +141,29 @@ void Game::LoadShaders()
 	if(!pixelShader->LoadShaderFile(L"Debug/PixelShader.cso"))	
 		pixelShader->LoadShaderFile(L"PixelShader.cso");
 
-	// You'll notice that the code above attempts to load each
-	// compiled shader file (.cso) from two different relative paths.
+	skyVertexShader = new SimpleVertexShader(device, context);
+	if (!skyVertexShader->LoadShaderFile(L"Debug/SkyBoxVertexShader.cso"))
+		skyVertexShader->LoadShaderFile(L"SkyBoxVertexShader.cso");
 
-	// This is because the "working directory" (where relative paths begin)
-	// will be different during the following two scenarios:
-	//  - Debugging in VS: The "Project Directory" (where your .cpp files are) 
-	//  - Run .exe directly: The "Output Directory" (where the .exe & .cso files are)
+	skyPixelShader = new SimplePixelShader(device, context);
+	if (!skyPixelShader->LoadShaderFile(L"Debug/SkyBoxPixelShader.cso"))
+		skyPixelShader->LoadShaderFile(L"SkyBoxPixelShader.cso");
 
-	// Checking both paths is the easiest way to ensure both 
-	// scenarios work correctly, although others exist
+	tessVertexShader = new SimpleVertexShader(device, context);
+	if (!tessVertexShader->LoadShaderFile(L"Debug/TessVertexShader.cso"))
+		tessVertexShader->LoadShaderFile(L"TessVertexShader.cso");
+
+	tessPixelShader = new SimplePixelShader(device, context);
+	if (!tessPixelShader->LoadShaderFile(L"Debug/TessPixelShader.cso"))
+		tessPixelShader->LoadShaderFile(L"TessPixelShader.cso");
+
+	hullShader = new SimpleHullShader(device, context);
+	if (!hullShader->LoadShaderFile(L"Debug/HullShader.cso"))
+		hullShader->LoadShaderFile(L"HullShader.cso");
+
+	domainShader = new SimpleDomainShader(device, context);
+	if (!domainShader->LoadShaderFile(L"Debug/DomainShader.cso"))
+		domainShader->LoadShaderFile(L"DomainShader.cso");
 }
 
 
@@ -184,6 +197,59 @@ void Game::CreateBasicGeometry()
 	skyEntity->SetScale(1.0f, 1.0f, 1.0);
 }
 
+void Game::LoadTextures()
+{
+	HRESULT r = CreateWICTextureFromFile(device, context, L"Textures/sphereAlbedo.tif", 0, &sphereTextureSRV);
+	HRESULT l = CreateWICTextureFromFile(device, context, L"Textures/sphereNormalMap.tif", 0, &sphereNormalMapSRV);
+	HRESULT s = CreateWICTextureFromFile(device, context, L"Textures/sphereHeightMap.tif", 0, &sphereHeightMapSRV);
+}
+
+void Game::LoadMaterials()
+{
+	D3D11_SAMPLER_DESC samplerDesc = {};
+	samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+	samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+	samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+	samplerDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+	samplerDesc.MaxAnisotropy = 16;
+	samplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
+
+	device->CreateSamplerState(&samplerDesc, &sampler);
+
+	D3D11_SAMPLER_DESC heightSamplerDesc = {};
+	heightSamplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+	heightSamplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+	heightSamplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+	heightSamplerDesc.BorderColor[0] = 0;
+	heightSamplerDesc.BorderColor[1] = 0;
+	heightSamplerDesc.BorderColor[2] = 0;
+	heightSamplerDesc.BorderColor[3] = 0;
+	heightSamplerDesc.ComparisonFunc = D3D11_COMPARISON_ALWAYS;
+	heightSamplerDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+	heightSamplerDesc.MaxAnisotropy = 16;
+	heightSamplerDesc.MaxLOD = 0.0f;
+	heightSamplerDesc.MipLODBias = 0.0f;
+
+	device->CreateSamplerState(&heightSamplerDesc, &heightSampler);
+}
+
+void Game::LoadSkyBox()
+{
+	HRESULT m = CreateDDSTextureFromFile(device, L"Textures/Stormy.dds", 0, &skyTextureSRV);
+
+	// Skybox Setup
+	D3D11_RASTERIZER_DESC rasterizerDesc = {};
+	rasterizerDesc.FillMode = D3D11_FILL_SOLID;
+	rasterizerDesc.CullMode = D3D11_CULL_FRONT;
+	rasterizerDesc.DepthClipEnable = true;
+	device->CreateRasterizerState(&rasterizerDesc, &skyRasterizerState);
+
+	D3D11_DEPTH_STENCIL_DESC depthStencilDesc = {};
+	depthStencilDesc.DepthEnable = true;
+	depthStencilDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+	depthStencilDesc.DepthFunc = D3D11_COMPARISON_LESS_EQUAL;
+	device->CreateDepthStencilState(&depthStencilDesc, &skyDepthState);
+}
 
 // --------------------------------------------------------
 // Handle resizing DirectX "stuff" to match the new window size.
@@ -194,13 +260,8 @@ void Game::OnResize()
 	// Handle base-level DX resize stuff
 	DXCore::OnResize();
 
-	// Update our projection matrix since the window size changed
-	XMMATRIX P = XMMatrixPerspectiveFovLH(
-		0.25f * 3.1415926535f,	// Field of View Angle
-		(float)width / height,	// Aspect ratio
-		0.1f,				  	// Near clip plane distance
-		100.0f);			  	// Far clip plane distance
-	XMStoreFloat4x4(&projectionMatrix, XMMatrixTranspose(P)); // Transpose for HLSL!
+	if (camera)
+		camera->UpdateProjectionMatrix((float)width / height);
 }
 
 // --------------------------------------------------------
@@ -208,73 +269,112 @@ void Game::OnResize()
 // --------------------------------------------------------
 void Game::Update(float deltaTime, float totalTime)
 {
+	camera->Update(deltaTime);
+
+	sphereEntity->UpdateWorldMatrix();
+
 	// Quit if the escape key is pressed
 	if (GetAsyncKeyState(VK_ESCAPE))
 		Quit();
 }
 
-// --------------------------------------------------------
-// Clear the screen, redraw everything, present to the user
-// --------------------------------------------------------
 void Game::Draw(float deltaTime, float totalTime)
 {
-	// Background color (Cornflower Blue in this case) for clearing
-	const float color[4] = {0.4f, 0.6f, 0.75f, 0.0f};
+	const float color[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 
-	// Clear the render target and depth buffer (erases what's on the screen)
-	//  - Do this ONCE PER FRAME
-	//  - At the beginning of Draw (before drawing *anything*)
 	context->ClearRenderTargetView(backBufferRTV, color);
 	context->ClearDepthStencilView(
-		depthStencilView, 
+		depthStencilView,
 		D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL,
 		1.0f,
 		0);
 
-	// Send data to shader variables
-	//  - Do this ONCE PER OBJECT you're drawing
-	//  - This is actually a complex process of copying data to a local buffer
-	//    and then copying that entire buffer to the GPU.  
-	//  - The "SimpleShader" class handles all of that for you.
-	vertexShader->SetMatrix4x4("world", worldMatrix);
-	vertexShader->SetMatrix4x4("view", viewMatrix);
-	vertexShader->SetMatrix4x4("projection", projectionMatrix);
-
-	// Once you've set all of the data you care to change for
-	// the next draw call, you need to actually send it to the GPU
-	//  - If you skip this, the "SetMatrix" calls above won't make it to the GPU!
-	vertexShader->CopyAllBufferData();
-
-	// Set the vertex and pixel shaders to use for the next Draw() command
-	//  - These don't technically need to be set every frame...YET
-	//  - Once you start applying different shaders to different objects,
-	//    you'll need to swap the current shaders before each draw
-	vertexShader->SetShader();
-	pixelShader->SetShader();
-
-	// Set buffers in the input assembler
-	//  - Do this ONCE PER OBJECT you're drawing, since each object might
-	//    have different geometry.
 	UINT stride = sizeof(Vertex);
 	UINT offset = 0;
+
+	// Draw Sphere
+	if (rsState == 0)
+		context->RSSetState(rsStateSolid);
+	else if (rsState == 1)
+		context->RSSetState(rsStateWire);
+
+	ID3D11Buffer* vertexBuffer = sphereEntity->GetMesh()->GetVertexBuffer();
+	ID3D11Buffer* indexBuffer = sphereEntity->GetMesh()->GetIndexBuffer();
+
 	context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
 	context->IASetIndexBuffer(indexBuffer, DXGI_FORMAT_R32_UINT, 0);
 
-	// Finally do the actual drawing
-	//  - Do this ONCE PER OBJECT you intend to draw
-	//  - This will use all of the currently set DirectX "stuff" (shaders, buffers, etc)
-	//  - DrawIndexed() uses the currently set INDEX BUFFER to look up corresponding
-	//     vertices in the currently set VERTEX BUFFER
-	context->DrawIndexed(
-		3,     // The number of indices to use (we could draw a subset if we wanted)
-		0,     // Offset to the first index we want to use
-		0);    // Offset to add to each index when looking up vertices
+	vertexShader->SetShader();
+	vertexShader->CopyAllBufferData();
+	pixelShader->SetShader();
+	pixelShader->CopyAllBufferData();
 
+	tessVertexShader->SetMatrix4x4("world", *sphereEntity->GetWorldMatrix());
+	tessVertexShader->SetShader();
+	tessVertexShader->CopyAllBufferData();
 
+	hullShader->SetFloat("tessellationAmount", tessellationAmount);
+	hullShader->SetFloat3("padding", XMFLOAT3(0.0f, 0.0f, 0.0f));
+	hullShader->SetShader();
+	hullShader->CopyAllBufferData();
 
-	// Present the back buffer to the user
-	//  - Puts the final frame we're drawing into the window so the user can see it
-	//  - Do this exactly ONCE PER FRAME (always at the very end of the frame)
+	domainShader->SetMatrix4x4("view", camera->GetView());
+	domainShader->SetMatrix4x4("projection", camera->GetProjection());
+	domainShader->SetFloat("Hscale", HBias);
+	domainShader->SetFloat("Hbias", HScale);
+	domainShader->SetShaderResourceView("heightSRV", sphereHeightMapSRV);
+	domainShader->SetShader();
+	domainShader->CopyAllBufferData();
+
+	tessPixelShader->SetShaderResourceView("textureSRV", sphereTextureSRV);
+	tessPixelShader->SetShaderResourceView("normalMapSRV", sphereNormalMapSRV);
+	tessPixelShader->SetSamplerState("basicSampler", sampler);
+	tessPixelShader->SetShader();
+	tessPixelShader->CopyAllBufferData();
+
+	context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST);
+
+	context->DrawIndexed(sphereEntity->GetMesh()->GetIndexCount(), 0, 0);
+
+	// Draw skybox
+
+	context->HSSetShader(0, 0, 0);
+	context->DSSetShader(0, 0, 0);
+
+	vertexBuffer = skyEntity->GetMesh()->GetVertexBuffer();
+	indexBuffer = skyEntity->GetMesh()->GetIndexBuffer();
+
+	skyVertexShader->SetMatrix4x4("view", camera->GetView());
+	skyVertexShader->SetMatrix4x4("projection", camera->GetProjection());
+
+	skyVertexShader->SetShader();
+	skyVertexShader->CopyAllBufferData();
+
+	skyPixelShader->SetShaderResourceView("Sky", skyTextureSRV);
+
+	skyPixelShader->SetShader();
+	skyPixelShader->CopyAllBufferData();
+
+	context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
+	context->IASetIndexBuffer(indexBuffer, DXGI_FORMAT_R32_UINT, 0);
+	context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	context->RSSetState(0);
+	context->OMSetDepthStencilState(0, 0);
+
+	// ImGui
+	ImGui_ImplDX11_NewFrame();
+
+	ImGui::Text("Tessellation Demo");
+	ImGui::SliderFloat("Tessellsation Amount", &tessellationAmount, 0.0f, 50.0f);
+	ImGui::SliderFloat("HScale", &HScale, 0.0f, 5.0f);
+	ImGui::SliderFloat("HBias", &HBias, 0.0f, 5.0f);
+	ImGui::Text("Rasterizer State");
+	ImGui::RadioButton("Solid", &rsState, 0);
+	ImGui::RadioButton("WireFrame", &rsState, 1);
+
+	ImGui::Render();
+
 	swapChain->Present(0, 0);
 }
 
