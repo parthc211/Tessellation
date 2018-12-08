@@ -1,22 +1,23 @@
+
 Texture2D textureSRV : register(t0);
 Texture2D normalMapSRV : register(t1);
 SamplerState basicSampler : register(s0);
 
-struct VertexToPixel
+
+struct DomainToPixel
 {
-	float4 position		: SV_POSITION;
+	float4 vPosition	: SV_POSITION;
 	float3 normal		: NORMAL;
 	float3 tangent		: TANGENT;
 	float3 worldPos		: POSITION;
 	float2 uv			: TEXCOORD;
 };
 
-float4 main(VertexToPixel input) : SV_TARGET
+float4 main(DomainToPixel input) : SV_TARGET
 {
 	input.normal = normalize(input.normal);
 	input.tangent = normalize(input.tangent);
 
-	// Read and unpack normal from map
 	float3 normalFromMap = normalMapSRV.Sample(basicSampler, input.uv).xyz * 2 - 1;
 
 	// Transform from tangent to world space

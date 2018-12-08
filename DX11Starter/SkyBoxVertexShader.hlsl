@@ -37,7 +37,7 @@ VertexToPixel main(VertexShaderInput input)
 
 	// Calculate output position
 	matrix viewProj = mul(viewNoMovement, projection);
-	output.position = mul(float4(input.position, 1.0f), viewPorj);
+	output.position = mul(float4(input.position, 1.0f), viewProj);
 
 	output.position.z = output.position.w;
 

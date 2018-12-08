@@ -6,14 +6,7 @@
 // For the DirectX Math library
 using namespace DirectX;
 
-// --------------------------------------------------------
-// Constructor
-//
-// DXCore (base class) constructor will set up underlying fields.
-// DirectX itself, and our window, are not ready yet!
-//
-// hInstance - the application's OS-level handle (unique ID)
-// --------------------------------------------------------
+
 Game::Game(HINSTANCE hInstance)
 	: DXCore( 
 		hInstance,		   // The application's handle
@@ -35,13 +28,10 @@ Game::Game(HINSTANCE hInstance)
 #endif
 }
 
-// --------------------------------------------------------
-// Destructor - Clean up anything our game has created:
-//  - Release all DirectX objects created here
-//  - Delete any objects to prevent memory leaks
-// --------------------------------------------------------
+
 Game::~Game()
 {
+
 	delete vertexShader;
 	delete pixelShader;
 	delete skyVertexShader;
@@ -57,6 +47,7 @@ Game::~Game()
 	delete skyEntity;
 	delete camera;
 
+	
 	sampler->Release();
 	heightSampler->Release();
 	sphereTextureSRV->Release();
@@ -64,16 +55,14 @@ Game::~Game()
 	sphereHeightMapSRV->Release();
 	skyTextureSRV->Release();
 
+	
 	rsStateSolid->Release();
 	rsStateWire->Release();
 	skyRasterizerState->Release();
 	skyDepthState->Release();
 }
 
-// --------------------------------------------------------
-// Called once per program, after DirectX and the window
-// are initialized but before the game loop.
-// --------------------------------------------------------
+
 void Game::Init()
 {
 	LoadShaders();
@@ -82,6 +71,7 @@ void Game::Init()
 	LoadTextures();
 	LoadMaterials();
 	LoadSkyBox();
+
 
 	D3D11_RASTERIZER_DESC rasterDescSolid;
 	rasterDescSolid.AntialiasedLineEnable = false;
@@ -227,7 +217,8 @@ void Game::LoadMaterials()
 	heightSamplerDesc.ComparisonFunc = D3D11_COMPARISON_ALWAYS;
 	heightSamplerDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
 	heightSamplerDesc.MaxAnisotropy = 16;
-	heightSamplerDesc.MaxLOD = 0.0f;
+	heightSamplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
+	heightSamplerDesc.MinLOD = 0.0f;
 	heightSamplerDesc.MipLODBias = 0.0f;
 
 	device->CreateSamplerState(&heightSamplerDesc, &heightSampler);
@@ -235,7 +226,7 @@ void Game::LoadMaterials()
 
 void Game::LoadSkyBox()
 {
-	HRESULT m = CreateDDSTextureFromFile(device, L"Textures/Stormy.dds", 0, &skyTextureSRV);
+	HRESULT m = CreateDDSTextureFromFile(device, L"Debug/Textures/Stormy.dds", 0, &skyTextureSRV);
 
 	// Skybox Setup
 	D3D11_RASTERIZER_DESC rasterizerDesc = {};
@@ -272,6 +263,7 @@ void Game::Update(float deltaTime, float totalTime)
 	camera->Update(deltaTime);
 
 	sphereEntity->UpdateWorldMatrix();
+	//skyEntity->UpdateWorldMatrix();
 
 	// Quit if the escape key is pressed
 	if (GetAsyncKeyState(VK_ESCAPE))
@@ -323,6 +315,7 @@ void Game::Draw(float deltaTime, float totalTime)
 	domainShader->SetFloat("Hscale", HBias);
 	domainShader->SetFloat("Hbias", HScale);
 	domainShader->SetShaderResourceView("heightSRV", sphereHeightMapSRV);
+	domainShader->SetSamplerState("heightSampler", heightSampler);
 	domainShader->SetShader();
 	domainShader->CopyAllBufferData();
 
@@ -359,11 +352,16 @@ void Game::Draw(float deltaTime, float totalTime)
 	context->IASetIndexBuffer(indexBuffer, DXGI_FORMAT_R32_UINT, 0);
 	context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
+	context->RSSetState(skyRasterizerState);
+	context->OMSetDepthStencilState(skyDepthState, 0);
+
+	context->DrawIndexed(skyMesh->GetIndexCount(), 0, 0);
+
 	context->RSSetState(0);
 	context->OMSetDepthStencilState(0, 0);
 
 	// ImGui
-	ImGui_ImplDX11_NewFrame();
+	/*ImGui_ImplDX11_NewFrame();
 
 	ImGui::Text("Tessellation Demo");
 	ImGui::SliderFloat("Tessellsation Amount", &tessellationAmount, 0.0f, 50.0f);
@@ -373,7 +371,7 @@ void Game::Draw(float deltaTime, float totalTime)
 	ImGui::RadioButton("Solid", &rsState, 0);
 	ImGui::RadioButton("WireFrame", &rsState, 1);
 
-	ImGui::Render();
+	ImGui::Render();*/
 
 	swapChain->Present(0, 0);
 }
